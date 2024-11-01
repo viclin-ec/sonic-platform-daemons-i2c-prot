@@ -751,12 +751,31 @@ def waiting_time_compensation_with_sleep(time_start, time_to_wait):
     if time_diff < time_to_wait:
         time.sleep(time_to_wait - time_diff)
 
+
 # Update port SFP status table for SW fields on receiving SFP change event
 
+def table_entry_comparer (table, port_name, data):
+    entry_exist, record = table.get(port_name)
+    if entry_exist:
+        different = False
+        record = dict(record) if record else {}
+        for i in data.keys():
+            if i not in record or record[i] != data[i]:
+                different = True
+                break
+    else: # Table entry not exists
+        different = True
+    return different
 
-def update_port_transceiver_status_table_sw(logical_port_name, status_tbl, status, error_descriptions='N/A'):
+
+# Update port SFP status table on receiving SFP change event
+def update_port_transceiver_status_table_sw(logical_port_name, status_tbl, status, error_descriptions='N/A', table_entry_compare = True):
     fvs = swsscommon.FieldValuePairs([('status', status), ('error', error_descriptions)])
-    status_tbl.set(logical_port_name, fvs)
+    if table_entry_compare:
+        if table_entry_comparer(status_tbl, logical_port_name, dict(fvs)):
+            status_tbl.set(logical_port_name, fvs)
+    else:
+        status_tbl.set(logical_port_name, fvs)
 
 # Update port SFP status table for HW fields
 
@@ -784,7 +803,8 @@ def update_port_transceiver_status_table_hw(logical_port_name, port_mapping,
                 continue
             beautify_transceiver_status_dict(transceiver_status_dict, physical_port)
             fvs = swsscommon.FieldValuePairs([(k, v) for k, v in transceiver_status_dict.items()])
-            table.set(physical_port_name, fvs)
+            if table_entry_comparer(table, physical_port_name, dict(fvs)):
+                table.set(physical_port_name, fvs)
         else:
             return SFP_EEPROM_NOT_READY
 
@@ -2007,7 +2027,7 @@ class SfpStateUpdateTask(threading.Thread):
             physical_port_list = port_mapping.logical_port_name_to_physical_port_list(logical_port_name)
             if physical_port_list is None:
                 helper_logger.log_error("No physical ports found for logical port '{}' during sfp status table init".format(logical_port_name))
-                update_port_transceiver_status_table_sw(logical_port_name, xcvr_table_helper.get_status_tbl(asic_index), sfp_status_helper.SFP_STATUS_REMOVED)
+                update_port_transceiver_status_table_sw(logical_port_name, xcvr_table_helper.get_status_tbl(asic_index), sfp_status_helper.SFP_STATUS_REMOVED, table_entry_compare=(state==STATE_INIT))
 
             for physical_port in physical_port_list:
                 if stop_event.is_set():
@@ -2197,7 +2217,7 @@ class SfpStateUpdateTask(threading.Thread):
                                 helper_logger.log_notice("{}: Got SFP inserted event".format(logical_port))
                                 # A plugin event will clear the error state.
                                 update_port_transceiver_status_table_sw(
-                                    logical_port, self.xcvr_table_helper.get_status_tbl(asic_index), sfp_status_helper.SFP_STATUS_INSERTED)
+                                    logical_port, self.xcvr_table_helper.get_status_tbl(asic_index), sfp_status_helper.SFP_STATUS_INSERTED, table_entry_compare=(state==STATE_INIT))
                                 helper_logger.log_notice("{}: received plug in and update port sfp status table.".format(logical_port))
                                 rc = post_port_sfp_info_to_db(logical_port, self.port_mapping, self.xcvr_table_helper.get_intf_tbl(asic_index), transceiver_dict)
                                 # If we didn't get the sfp info, assuming the eeprom is not ready, give a try again.
@@ -2217,7 +2237,7 @@ class SfpStateUpdateTask(threading.Thread):
                             elif value == sfp_status_helper.SFP_STATUS_REMOVED:
                                 helper_logger.log_notice("{}: Got SFP removed event".format(logical_port))
                                 update_port_transceiver_status_table_sw(
-                                    logical_port, self.xcvr_table_helper.get_status_tbl(asic_index), sfp_status_helper.SFP_STATUS_REMOVED)
+                                    logical_port, self.xcvr_table_helper.get_status_tbl(asic_index), sfp_status_helper.SFP_STATUS_REMOVED, table_entry_compare=(state==STATE_INIT))
                                 helper_logger.log_notice("{}: received plug out and update port sfp status table.".format(logical_port))
                                 del_port_sfp_dom_info_from_db(logical_port, self.port_mapping,
                                                               self.xcvr_table_helper.get_intf_tbl(asic_index),
@@ -2242,7 +2262,8 @@ class SfpStateUpdateTask(threading.Thread):
 
                                     # Add error info to database
                                     # Any existing error will be replaced by the new one.
-                                    update_port_transceiver_status_table_sw(logical_port, self.xcvr_table_helper.get_status_tbl(asic_index), value, '|'.join(error_descriptions))
+
+                                    update_port_transceiver_status_table_sw(logical_port, self.xcvr_table_helper.get_status_tbl(asic_index), value, '|'.join(error_descriptions), table_entry_compare=(state==STATE_INIT))
                                     helper_logger.log_notice("{}: Receive error update port sfp status table.".format(logical_port))
                                     # In this case EEPROM is not accessible. The DOM info will be removed since it can be out-of-date.
                                     # The interface info remains in the DB since it is static.

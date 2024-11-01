@@ -585,11 +585,13 @@ class TestXcvrdScript(object):
         task = SfpStateUpdateTask(DEFAULT_NAMESPACE, port_mapping, stop_event, sfp_error_event)
         task._post_port_sfp_info_and_dom_thr_to_db_once(port_mapping, xcvr_table_helper, stop_event)
 
+
     @patch('xcvrd.xcvrd_utilities.port_mapping.PortMapping.logical_port_name_to_physical_port_list', MagicMock(return_value=[0]))
     @patch('xcvrd.xcvrd.platform_sfputil', MagicMock(return_value=[0]))
     @patch('xcvrd.xcvrd._wrapper_get_presence', MagicMock(return_value=True))
     @patch('xcvrd.xcvrd._wrapper_is_replaceable', MagicMock(return_value=True))
     @patch('xcvrd.xcvrd.XcvrTableHelper', MagicMock())
+    @patch('xcvrd.xcvrd.table_entry_comparer', MagicMock(return_value=True))
     def test_init_port_sfp_status_tbl(self):
         port_mapping = PortMapping()
         port_change_event = PortChangeEvent('Ethernet0', 1, 0, PortChangeEvent.PORT_ADD)
@@ -1603,6 +1605,7 @@ class TestXcvrdScript(object):
 
     @patch('xcvrd.xcvrd_utilities.port_mapping.PortMapping.logical_port_name_to_physical_port_list', MagicMock(return_value=[0]))
     @patch('xcvrd.xcvrd._wrapper_get_presence', MagicMock(return_value=True))
+    @patch('xcvrd.xcvrd.table_entry_comparer', MagicMock(return_value=True))
     @pytest.mark.parametrize("dom_info_cache, dom_th_info, expected", [
         ({0: {'temperature': '75'}},
          (('temphighalarm', '80'),
@@ -1762,6 +1765,7 @@ class TestXcvrdScript(object):
     @patch('xcvrd.xcvrd.SfpStateUpdateTask.init', MagicMock())
     @patch('xcvrd.xcvrd_utilities.port_mapping.subscribe_port_speed_change_event', MagicMock(return_value=(None, None)))
     @patch('xcvrd.xcvrd_utilities.port_mapping.handle_port_update_event', MagicMock())
+    @patch('xcvrd.xcvrd.table_entry_comparer', MagicMock(return_value=True))
     @patch('os.kill')
     @patch('xcvrd.xcvrd.SfpStateUpdateTask._mapping_event_from_change_event')
     @patch('xcvrd.xcvrd._wrapper_get_transceiver_change_event')
@@ -1869,6 +1873,8 @@ class TestXcvrdScript(object):
     @patch('xcvrd.xcvrd.post_port_dom_threshold_info_to_db')
     @patch('xcvrd.xcvrd.post_port_sfp_info_to_db')
     @patch('xcvrd.xcvrd.update_port_transceiver_status_table_sw')
+    @patch('xcvrd.xcvrd.table_entry_comparer', MagicMock(return_value=True))
+
     def test_SfpStateUpdateTask_on_add_logical_port(self, mock_update_status, mock_post_sfp_info,
             mock_post_dom_th, mock_update_media_setting, mock_get_presence, mock_table_helper):
         class MockTable:
